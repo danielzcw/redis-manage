@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Redis Manage</title>
+<style>
+:root {
+  --bg: #0d1117; --surface: #161b22; --border: #30363d;
+  --text: #c9d1d9; --text-muted: #8b949e; --text-bright: #f0f6fc;
+  --primary: #58a6ff; --success: #3fb950; --warning: #d29922; --danger: #f85149;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  --mono: 'SF Mono', SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; }
+nav { background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 24px; height: 48px; gap: 4px; }
+nav .brand { font-weight: 600; color: var(--primary); margin-right: 24px; font-size: 15px; letter-spacing: -0.3px; }
+nav button { background: none; border: none; color: var(--text-muted); padding: 8px 14px; cursor: pointer; font-size: 13px; border-radius: 6px; font-family: var(--font); }
+nav button:hover { color: var(--text); background: rgba(255,255,255,.05); }
+nav button.active { color: var(--text-bright); background: rgba(255,255,255,.08); }
+.container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+.card .label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+.card .value { font-size: 24px; font-weight: 600; color: var(--text-bright); font-family: var(--mono); }
+.card .sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.toolbar { display: flex; gap: 8px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
+input, select { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 6px 10px; border-radius: 6px; font-size: 13px; font-family: var(--font); outline: none; }
+input:focus { border-color: var(--primary); }
+button.btn { background: var(--primary); color: #fff; border: none; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; font-family: var(--font); }
+button.btn:hover { opacity: .9; }
+button.btn-danger { background: var(--danger); }
+button.btn-sm { padding: 4px 10px; font-size: 12px; }
+table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+th { text-align: left; font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; padding: 10px 12px; border-bottom: 1px solid var(--border); background: rgba(0,0,0,.15); }
+td { padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 13px; font-family: var(--mono); max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: rgba(255,255,255,.02); }
+.tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 500; }
+.tag-string { background: rgba(88,166,255,.15); color: var(--primary); }
+.tag-hash { background: rgba(63,185,80,.15); color: var(--success); }
+.tag-list { background: rgba(210,153,34,.15); color: var(--warning); }
+.tag-set { background: rgba(188,140,255,.15); color: #bc8cff; }
+.tag-zset { background: rgba(255,123,114,.15); color: #ff7b72; }
+.tag-stream { background: rgba(121,192,255,.15); color: #79c0ff; }
+.detail-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-top: 16px; }
+.detail-panel h3 { font-size: 14px; color: var(--text-bright); margin-bottom: 12px; }
+.detail-meta { display: flex; gap: 24px; margin-bottom: 16px; flex-wrap: wrap; }
+.detail-meta span { font-size: 12px; color: var(--text-muted); }
+.detail-meta span b { color: var(--text); font-family: var(--mono); }
+pre.json { background: rgba(0,0,0,.25); padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 12px; line-height: 1.5; color: var(--text); font-family: var(--mono); max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+.empty { text-align: center; padding: 48px; color: var(--text-muted); font-size: 14px; }
+.page { display: none; }
+.page.active { display: block; }
+.section { margin-bottom: 32px; }
+.section h2 { font-size: 16px; color: var(--text-bright); margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin .6s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.status-bar { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+.clickable { cursor: pointer; }
+.clickable:hover { color: var(--primary); }
+</style>
+</head>
+<body>
+
+<nav>
+  <span class="brand">Redis Manage</span>
+  <button class="active" onclick="showPage('dashboard')">Dashboard</button>
+  <button onclick="showPage('keys')">Keys</button>
+  <button onclick="showPage('queues')">Queues</button>
+  <button onclick="showPage('analysis')">Analysis</button>
+</nav>
+
+<div class="container">
+  <!-- Dashboard -->
+  <div id="page-dashboard" class="page active">
+    <div id="info-cards" class="cards"></div>
+    <div class="card"><div class="label">Server Status</div><pre id="raw-info" class="json" style="margin-top:8px">Loading...</pre></div>
+  </div>
+
+  <!-- Keys -->
+  <div id="page-keys" class="page">
+    <div class="toolbar">
+      <input id="key-pattern" type="text" placeholder="Pattern (e.g. user:*)" value="*" style="width:220px">
+      <input id="key-count" type="number" placeholder="Count" value="50" style="width:80px">
+      <button class="btn" onclick="scanKeys(true)">Scan</button>
+      <span id="key-status" class="status-bar"></span>
+    </div>
+    <table id="key-table"><thead><tr><th>Key</th><th>Type</th><th>TTL</th><th></th></tr></thead><tbody id="key-tbody"></tbody></table>
+    <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+      <button id="key-more-btn" class="btn btn-sm" style="display:none" onclick="scanKeys(false)">Load More</button>
+      <span id="key-cursor-info" class="status-bar"></span>
+    </div>
+    <div id="key-detail"></div>
+  </div>
+
+  <!-- Queues -->
+  <div id="page-queues" class="page">
+    <div class="toolbar">
+      <input id="queue-pattern" type="text" placeholder="Pattern" value="*" style="width:220px">
+      <button class="btn" onclick="loadQueues()">Scan</button>
+    </div>
+    <table><thead><tr><th>Queue Key</th><th>Type</th><th>Length</th><th></th></tr></thead><tbody id="queue-tbody"></tbody></table>
+    <div id="queue-detail"></div>
+  </div>
+
+  <!-- Analysis -->
+  <div id="page-analysis" class="page">
+    <div class="section">
+      <h2>Big Key Scanner</h2>
+      <div class="toolbar">
+        <input id="bk-pattern" type="text" placeholder="Pattern" value="*" style="width:180px">
+        <input id="bk-top" type="number" placeholder="Top N" value="20" style="width:70px">
+        <input id="bk-threshold" type="number" placeholder="Min bytes" value="0" style="width:100px">
+        <button class="btn" onclick="scanBigKeys()">Scan</button>
+        <span id="bk-status" class="status-bar"></span>
+      </div>
+      <table><thead><tr><th>Key</th><th>Type</th><th>Size</th><th>Elements</th></tr></thead><tbody id="bk-tbody"></tbody></table>
+    </div>
+    <div class="section">
+      <h2>Hot Key Detection</h2>
+      <div class="toolbar">
+        <input id="hk-samples" type="number" placeholder="Samples" value="200" style="width:100px">
+        <button class="btn" onclick="scanHotKeys()">Detect</button>
+        <span id="hk-status" class="status-bar"></span>
+      </div>
+      <table><thead><tr><th>Key</th><th>Type</th><th>Frequency</th></tr></thead><tbody id="hk-tbody"></tbody></table>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '/api';
+let keyCursor = 0;
+
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  event.target.classList.add('active');
+  if (name === 'dashboard') loadDashboard();
+}
+
+async function api(path) {
+  const r = await fetch(API + path);
+  if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || r.statusText); }
+  return r.json();
+}
+async function apiMut(method, path, body) {
+  const r = await fetch(API + path, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || r.statusText); }
+  return r.json();
+}
+
+function tag(type) {
+  return `<span class="tag tag-${type}">${type}</span>`;
+}
+function fmtBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+  if (b < 1073741824) return (b/1048576).toFixed(1) + ' MB';
+  return (b/1073741824).toFixed(2) + ' GB';
+}
+function fmtTTL(ns) {
+  if (!ns || ns < 0) return '<span style="color:var(--text-muted)">none</span>';
+  const s = Math.floor(ns / 1e9);
+  if (s < 60) return s + 's';
+  if (s < 3600) return Math.floor(s/60) + 'm ' + (s%60) + 's';
+  return Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm';
+}
+function fmtNum(n) { return n != null ? n.toLocaleString() : '0'; }
+
+async function loadDashboard() {
+  try {
+    const info = await api('/info');
+    document.getElementById('info-cards').innerHTML = `
+      <div class="card"><div class="label">Version</div><div class="value">${info.version||'N/A'}</div><div class="sub">${info.mode||'standalone'}</div></div>
+      <div class="card"><div class="label">Memory</div><div class="value">${info.used_memory||'N/A'}</div><div class="sub">RSS: ${info.used_memory_rss||'N/A'}</div></div>
+      <div class="card"><div class="label">Total Keys</div><div class="value">${fmtNum(info.total_keys)}</div></div>
+      <div class="card"><div class="label">Clients</div><div class="value">${info.connected_clients||'0'}</div></div>
+      <div class="card"><div class="label">Uptime</div><div class="value">${info.uptime_in_seconds ? Math.floor(info.uptime_in_seconds/3600)+'h' : 'N/A'}</div></div>
+    `;
+    document.getElementById('raw-info').textContent = JSON.stringify(info, null, 2);
+  } catch(e) {
+    document.getElementById('info-cards').innerHTML = `<div class="card"><div class="label">Error</div><div class="value" style="font-size:14px;color:var(--danger)">${e.message}</div></div>`;
+  }
+}
+
+async function scanKeys(reset) {
+  if (reset) { keyCursor = 0; document.getElementById('key-tbody').innerHTML = ''; document.getElementById('key-detail').innerHTML = ''; }
+  const pattern = document.getElementById('key-pattern').value || '*';
+  const count = document.getElementById('key-count').value || '50';
+  document.getElementById('key-status').innerHTML = '<span class="spinner"></span> Scanning...';
+  try {
+    const data = await api(`/keys?pattern=${encodeURIComponent(pattern)}&cursor=${keyCursor}&count=${count}`);
+    const tbody = document.getElementById('key-tbody');
+    data.keys.forEach(k => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td class="clickable" onclick="viewKey('${k.key.replace(/'/g,"\\'")}')">${k.key}</td><td>${tag(k.type)}</td><td>${fmtTTL(k.ttl)}</td><td><button class="btn btn-sm btn-danger" onclick="deleteKey('${k.key.replace(/'/g,"\\'")}')">Del</button></td>`;
+      tbody.appendChild(tr);
+    });
+    keyCursor = data.cursor;
+    document.getElementById('key-more-btn').style.display = data.cursor > 0 ? 'inline-block' : 'none';
+    document.getElementById('key-cursor-info').textContent = data.cursor > 0 ? `Cursor: ${data.cursor}` : 'Scan complete';
+    document.getElementById('key-status').textContent = `${data.keys.length} keys loaded`;
+  } catch(e) {
+    document.getElementById('key-status').textContent = 'Error: ' + e.message;
+  }
+}
+
+async function viewKey(key) {
+  const el = document.getElementById('key-detail');
+  el.innerHTML = '<div class="detail-panel"><span class="spinner"></span> Loading...</div>';
+  try {
+    const d = await api(`/keys/detail?key=${encodeURIComponent(key)}`);
+    let valueHtml;
+    if (d.format === 'json') {
+      valueHtml = `<pre class="json">${JSON.stringify(d.value, null, 2)}</pre>`;
+    } else if (d.format === 'hash') {
+      valueHtml = '<table>' + Object.entries(d.value).map(([k,v]) => `<tr><td style="color:var(--primary)">${k}</td><td>${v}</td></tr>`).join('') + '</table>';
+    } else if (d.format === 'list' || d.format === 'set') {
+      valueHtml = '<table>' + (d.value||[]).map((v,i) => `<tr><td style="width:40px;color:var(--text-muted)">${i}</td><td>${v}</td></tr>`).join('') + '</table>';
+    } else if (d.format === 'zset') {
+      valueHtml = '<table><thead><tr><th>Member</th><th>Score</th></tr></thead>' + (d.value||[]).map(z => `<tr><td>${z.Member||z.member||''}</td><td>${z.Score||z.score||0}</td></tr>`).join('') + '</table>';
+    } else if (d.format === 'stream') {
+      valueHtml = '<table><thead><tr><th>ID</th><th>Data</th></tr></thead>' + (d.value||[]).map(m => `<tr><td style="color:var(--text-muted)">${m.ID||m.id||''}</td><td>${JSON.stringify(m.Values||m.values||{})}</td></tr>`).join('') + '</table>';
+    } else {
+      valueHtml = `<pre class="json">${typeof d.value === 'string' ? d.value : JSON.stringify(d.value, null, 2)}</pre>`;
+    }
+    el.innerHTML = `<div class="detail-panel">
+      <h3>${d.key}</h3>
+      <div class="detail-meta">
+        <span>Type: <b>${d.type}</b></span>
+        <span>TTL: <b>${d.ttl > 0 ? d.ttl + 's' : 'none'}</b></span>
+        <span>Size: <b>${fmtBytes(d.size)}</b></span>
+        <span>Length: <b>${fmtNum(d.length)}</b></span>
+        <span>Format: <b>${d.format}</b></span>
+      </div>
+      ${valueHtml}
+    </div>`;
+  } catch(e) {
+    el.innerHTML = `<div class="detail-panel" style="color:var(--danger)">Error: ${e.message}</div>`;
+  }
+}
+
+async function deleteKey(key) {
+  if (!confirm(`Delete key "${key}"?`)) return;
+  try {
+    await fetch(API + `/keys/detail?key=${encodeURIComponent(key)}`, { method: 'DELETE' });
+    scanKeys(true);
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function loadQueues() {
+  const pattern = document.getElementById('queue-pattern').value || '*';
+  const tbody = document.getElementById('queue-tbody');
+  tbody.innerHTML = '<tr><td colspan="4"><span class="spinner"></span> Scanning...</td></tr>';
+  try {
+    const queues = await api(`/queues?pattern=${encodeURIComponent(pattern)}`);
+    if (queues.length === 0) { tbody.innerHTML = '<tr><td colspan="4" class="empty">No queues found</td></tr>'; return; }
+    tbody.innerHTML = queues.map(q => `<tr>
+      <td class="clickable" onclick="viewQueue('${q.key.replace(/'/g,"\\'")}')">${q.key}</td>
+      <td>${tag(q.type)}</td>
+      <td>${fmtNum(q.length)}</td>
+      <td><button class="btn btn-sm" onclick="viewQueue('${q.key.replace(/'/g,"\\'")}')">View</button></td>
+    </tr>`).join('');
+  } catch(e) { tbody.innerHTML = `<tr><td colspan="4" style="color:var(--danger)">${e.message}</td></tr>`; }
+}
+
+async function viewQueue(key) {
+  const el = document.getElementById('queue-detail');
+  el.innerHTML = '<div class="detail-panel"><span class="spinner"></span> Loading...</div>';
+  try {
+    const d = await api(`/queues/detail?key=${encodeURIComponent(key)}`);
+    let entriesHtml = '';
+    if (d.type === 'list') {
+      entriesHtml = '<table><thead><tr><th>#</th><th>Value</th></tr></thead>' +
+        (d.entries||[]).map((v,i) => `<tr><td style="width:40px;color:var(--text-muted)">${i}</td><td>${v}</td></tr>`).join('') + '</table>';
+    } else if (d.type === 'stream') {
+      entriesHtml = '<table><thead><tr><th>ID</th><th>Data</th></tr></thead>' +
+        (d.entries||[]).map(m => `<tr><td style="color:var(--text-muted)">${m.ID||''}</td><td>${JSON.stringify(m.Values||{})}</td></tr>`).join('') + '</table>';
+      if (d.groups && d.groups.length > 0) {
+        entriesHtml += '<h3 style="margin-top:16px;margin-bottom:8px">Consumer Groups</h3>';
+        entriesHtml += '<table><thead><tr><th>Group</th><th>Consumers</th><th>Pending</th><th>Last ID</th></tr></thead>' +
+          d.groups.map(g => `<tr><td>${g.name}</td><td>${g.consumers}</td><td>${g.pending}</td><td style="color:var(--text-muted)">${g.last_delivered_id}</td></tr>`).join('') + '</table>';
+      }
+    }
+    el.innerHTML = `<div class="detail-panel">
+      <h3>${d.key} <span class="tag tag-${d.type}">${d.type}</span></h3>
+      <div class="detail-meta"><span>Length: <b>${fmtNum(d.length)}</b></span></div>
+      ${entriesHtml}
+      <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+        <input id="push-val" type="text" placeholder="Value to push" style="flex:1">
+        <button class="btn" onclick="pushToQueue('${key.replace(/'/g,"\\'")}')">Push</button>
+        <button class="btn btn-sm" onclick="popFromQueue('${key.replace(/'/g,"\\'")}')">Pop 1</button>
+      </div>
+    </div>`;
+  } catch(e) { el.innerHTML = `<div class="detail-panel" style="color:var(--danger)">Error: ${e.message}</div>`; }
+}
+
+async function pushToQueue(key) {
+  const val = document.getElementById('push-val').value;
+  if (!val) return;
+  try { await apiMut('POST', `/queues/push?key=${encodeURIComponent(key)}`, {values:[val]}); viewQueue(key); } catch(e) { alert(e.message); }
+}
+async function popFromQueue(key) {
+  try { const r = await apiMut('POST', `/queues/pop?key=${encodeURIComponent(key)}&count=1`, {}); alert('Popped: ' + JSON.stringify(r.values)); viewQueue(key); } catch(e) { alert(e.message); }
+}
+
+async function scanBigKeys() {
+  const pattern = document.getElementById('bk-pattern').value || '*';
+  const top = document.getElementById('bk-top').value || '20';
+  const threshold = document.getElementById('bk-threshold').value || '0';
+  document.getElementById('bk-status').innerHTML = '<span class="spinner"></span> Scanning...';
+  document.getElementById('bk-tbody').innerHTML = '';
+  try {
+    const data = await api(`/analysis/bigkeys?pattern=${encodeURIComponent(pattern)}&top=${top}&threshold=${threshold}`);
+    const results = data.results || [];
+    document.getElementById('bk-tbody').innerHTML = results.length === 0
+      ? '<tr><td colspan="4" class="empty">No big keys found</td></tr>'
+      : results.map(r => `<tr><td class="clickable" onclick="showPage('keys');document.getElementById('key-pattern').value='${r.key}';scanKeys(true)">${r.key}</td><td>${tag(r.type)}</td><td>${fmtBytes(r.size)}</td><td>${fmtNum(r.element_count)}</td></tr>`).join('');
+    document.getElementById('bk-status').textContent = `Scanned ${fmtNum(data.scanned_keys)} keys in ${data.duration}`;
+  } catch(e) { document.getElementById('bk-status').textContent = 'Error: ' + e.message; }
+}
+
+async function scanHotKeys() {
+  const samples = document.getElementById('hk-samples').value || '200';
+  document.getElementById('hk-status').innerHTML = '<span class="spinner"></span> Detecting...';
+  document.getElementById('hk-tbody').innerHTML = '';
+  try {
+    const data = await api(`/analysis/hotkeys?samples=${samples}`);
+    const results = data.results || [];
+    document.getElementById('hk-tbody').innerHTML = results.length === 0
+      ? '<tr><td colspan="3" class="empty">No hot keys detected</td></tr>'
+      : results.map(r => `<tr><td>${r.key}</td><td>${tag(r.type)}</td><td>${r.frequency}</td></tr>`).join('');
+    document.getElementById('hk-status').textContent = `Sampled ${fmtNum(data.scanned_keys)} keys in ${data.duration}`;
+  } catch(e) { document.getElementById('hk-status').textContent = 'Error: ' + e.message; }
+}
+
+loadDashboard();
+</script>
+</body>
+</html>
