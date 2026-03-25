@@ -5,6 +5,7 @@ go 1.21
 require (
 	github.com/caarlos0/env/v9 v9.0.0
 	github.com/gin-gonic/gin v1.9.1
+	github.com/joho/godotenv v1.5.1
 	github.com/redis/go-redis/v9 v9.4.0
 	go.uber.org/zap v1.27.0
 )
