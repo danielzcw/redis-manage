@@ -37,6 +37,21 @@ th { text-align: left; font-size: 12px; color: var(--text-muted); text-transform
 td { padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 13px; font-family: var(--mono); max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 tr:last-child td { border-bottom: none; }
 tr:hover td { background: rgba(255,255,255,.02); }
+.detail-panel table td { max-width: none; white-space: normal; word-break: break-all; }
+.detail-panel table td pre.json { margin: 0; max-height: 300px; }
+.val-cell { position: relative; }
+.val-cell.collapsed { max-height: 22px; overflow: hidden; cursor: pointer; }
+.val-cell.collapsed::after { content: '... (click to expand)'; color: var(--text-muted); font-size: 11px; font-style: italic; }
+.val-toggle { font-size: 11px; color: var(--primary); cursor: pointer; margin-left: 6px; user-select: none; }
+.val-toggle:hover { text-decoration: underline; }
+.view-mode-bar { display: flex; gap: 4px; margin-bottom: 8px; }
+.view-mode-bar button { background: rgba(255,255,255,.05); border: 1px solid var(--border); color: var(--text-muted); padding: 3px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; font-family: var(--font); }
+.view-mode-bar button.active { background: rgba(88,166,255,.15); border-color: var(--primary); color: var(--primary); }
+.json-key { color: #79c0ff; }
+.json-str { color: #a5d6ff; }
+.json-num { color: #d2a8ff; }
+.json-bool { color: #ff7b72; }
+.json-null { color: var(--text-muted); }
 .tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 500; }
 .tag-string { background: rgba(88,166,255,.15); color: var(--primary); }
 .tag-hash { background: rgba(63,185,80,.15); color: var(--success); }
@@ -45,6 +60,19 @@ tr:hover td { background: rgba(255,255,255,.02); }
 .tag-zset { background: rgba(255,123,114,.15); color: #ff7b72; }
 .tag-stream { background: rgba(121,192,255,.15); color: #79c0ff; }
 .detail-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-top: 16px; }
+tr.key-row-active td { background: rgba(88,166,255,.06); }
+tr.key-detail-row td { padding: 0; border-bottom: 1px solid var(--border); background: rgba(0,0,0,.15); }
+.inline-detail { padding: 16px 12px; }
+.inline-detail .detail-meta { display: flex; gap: 20px; margin-bottom: 10px; flex-wrap: wrap; }
+.inline-detail .detail-meta span { font-size: 12px; color: var(--text-muted); }
+.inline-detail .detail-meta span b { color: var(--text); font-family: var(--mono); }
+.inline-detail .view-mode-bar { display: flex; gap: 4px; margin-bottom: 8px; }
+.inline-detail .view-mode-bar button { background: rgba(255,255,255,.05); border: 1px solid var(--border); color: var(--text-muted); padding: 3px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; font-family: var(--font); }
+.inline-detail .view-mode-bar button.active { background: rgba(88,166,255,.15); border-color: var(--primary); color: var(--primary); }
+.inline-detail table td { max-width: none; white-space: normal; word-break: break-all; }
+.inline-detail table td pre.json { margin: 0; max-height: 300px; }
+.inline-detail .collapse-btn { float: right; background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 12px; font-family: var(--font); padding: 2px 6px; }
+.inline-detail .collapse-btn:hover { color: var(--text); }
 .detail-panel h3 { font-size: 14px; color: var(--text-bright); margin-bottom: 12px; }
 .detail-meta { display: flex; gap: 24px; margin-bottom: 16px; flex-wrap: wrap; }
 .detail-meta span { font-size: 12px; color: var(--text-muted); }
@@ -60,6 +88,8 @@ pre.json { background: rgba(0,0,0,.25); padding: 12px; border-radius: 6px; overf
 .status-bar { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
 .clickable { cursor: pointer; }
 .clickable:hover { color: var(--primary); }
+.progress-container { height: 4px; background: var(--border); border-radius: 2px; margin-bottom: 12px; overflow: hidden; }
+.progress-bar { height: 100%; background: var(--primary); border-radius: 2px; transition: width .3s ease; width: 0; }
 </style>
 </head>
 <body>
@@ -92,7 +122,6 @@ pre.json { background: rgba(0,0,0,.25); padding: 12px; border-radius: 6px; overf
       <button id="key-more-btn" class="btn btn-sm" style="display:none" onclick="scanKeys(false)">Load More</button>
       <span id="key-cursor-info" class="status-bar"></span>
     </div>
-    <div id="key-detail"></div>
   </div>
 
   <!-- Queues -->
@@ -110,12 +139,14 @@ pre.json { background: rgba(0,0,0,.25); padding: 12px; border-radius: 6px; overf
     <div class="section">
       <h2>Big Key Scanner</h2>
       <div class="toolbar">
-        <input id="bk-pattern" type="text" placeholder="Pattern" value="*" style="width:180px">
-        <input id="bk-top" type="number" placeholder="Top N" value="20" style="width:70px">
-        <input id="bk-threshold" type="number" placeholder="Min bytes" value="0" style="width:100px">
+        <input id="bk-pattern" type="text" placeholder="Pattern" value="*" style="width:150px">
+        <input id="bk-top" type="number" placeholder="Top N" value="20" style="width:65px" title="Top N results">
+        <input id="bk-threshold" type="number" placeholder="Min bytes" value="0" style="width:90px" title="Minimum size in bytes">
+        <input id="bk-maxscan" type="number" placeholder="Max scan" value="10000" style="width:90px" title="Max keys to scan">
         <button class="btn" onclick="scanBigKeys()">Scan</button>
         <span id="bk-status" class="status-bar"></span>
       </div>
+      <div id="bk-progress" class="progress-container" style="display:none"><div id="bk-progress-bar" class="progress-bar"></div></div>
       <table><thead><tr><th>Key</th><th>Type</th><th>Size</th><th>Elements</th></tr></thead><tbody id="bk-tbody"></tbody></table>
     </div>
     <div class="section">
@@ -171,6 +202,46 @@ function fmtTTL(ns) {
 }
 function fmtNum(n) { return n != null ? n.toLocaleString() : '0'; }
 
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
+}
+
+function syntaxHighlight(json) {
+  if (typeof json !== 'string') json = JSON.stringify(json, null, 2);
+  return json.replace(/("(\\u[\da-fA-F]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(\.\d+)?([eE][+-]?\d+)?)/g, m => {
+    let cls = 'json-num';
+    if (/^"/.test(m)) { cls = /:$/.test(m) ? 'json-key' : 'json-str'; }
+    else if (/true|false/.test(m)) { cls = 'json-bool'; }
+    else if (/null/.test(m)) { cls = 'json-null'; }
+    return `<span class="${cls}">${m}</span>`;
+  });
+}
+
+function tryParseJSON(s) {
+  if (typeof s !== 'string') return null;
+  const t = s.trim();
+  if ((t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']'))) {
+    try { return JSON.parse(t); } catch(e) { return null; }
+  }
+  return null;
+}
+
+function renderValue(val, forceRaw) {
+  if (val === null || val === undefined) return '<span style="color:var(--text-muted)">null</span>';
+  const parsed = typeof val === 'string' ? tryParseJSON(val) : null;
+  if (!forceRaw && parsed !== null) {
+    return `<pre class="json">${syntaxHighlight(JSON.stringify(parsed, null, 2))}</pre>`;
+  }
+  if (!forceRaw && typeof val === 'object') {
+    return `<pre class="json">${syntaxHighlight(JSON.stringify(val, null, 2))}</pre>`;
+  }
+  return `<pre class="json">${escHtml(typeof val === 'string' ? val : JSON.stringify(val))}</pre>`;
+}
+
+let currentKeyViewRaw = false;
+
 async function loadDashboard() {
   try {
     const info = await api('/info');
@@ -188,7 +259,7 @@ async function loadDashboard() {
 }
 
 async function scanKeys(reset) {
-  if (reset) { keyCursor = 0; document.getElementById('key-tbody').innerHTML = ''; document.getElementById('key-detail').innerHTML = ''; }
+  if (reset) { keyCursor = 0; document.getElementById('key-tbody').innerHTML = ''; _openDetailKey = null; }
   const pattern = document.getElementById('key-pattern').value || '*';
   const count = document.getElementById('key-count').value || '50';
   document.getElementById('key-status').innerHTML = '<span class="spinner"></span> Scanning...';
@@ -196,8 +267,11 @@ async function scanKeys(reset) {
     const data = await api(`/keys?pattern=${encodeURIComponent(pattern)}&cursor=${keyCursor}&count=${count}`);
     const tbody = document.getElementById('key-tbody');
     data.keys.forEach(k => {
+      const safeKey = k.key.replace(/'/g, "\\'");
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td class="clickable" onclick="viewKey('${k.key.replace(/'/g,"\\'")}')">${k.key}</td><td>${tag(k.type)}</td><td>${fmtTTL(k.ttl)}</td><td><button class="btn btn-sm btn-danger" onclick="deleteKey('${k.key.replace(/'/g,"\\'")}')">Del</button></td>`;
+      tr.className = 'key-row';
+      tr.dataset.key = k.key;
+      tr.innerHTML = `<td class="clickable" onclick="toggleKeyDetail(this.parentElement, '${safeKey}')">${escHtml(k.key)}</td><td>${tag(k.type)}</td><td>${fmtTTL(k.ttl)}</td><td><button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteKey('${safeKey}')">Del</button></td>`;
       tbody.appendChild(tr);
     });
     keyCursor = data.cursor;
@@ -209,39 +283,95 @@ async function scanKeys(reset) {
   }
 }
 
-async function viewKey(key) {
-  const el = document.getElementById('key-detail');
-  el.innerHTML = '<div class="detail-panel"><span class="spinner"></span> Loading...</div>';
+let _openDetailKey = null;
+let _lastKeyData = null;
+
+function closeOpenDetail() {
+  document.querySelectorAll('tr.key-row-active').forEach(r => r.classList.remove('key-row-active'));
+  document.querySelectorAll('tr.key-detail-row').forEach(r => r.remove());
+  _openDetailKey = null;
+  _lastKeyData = null;
+}
+
+async function toggleKeyDetail(rowEl, key) {
+  if (_openDetailKey === key) {
+    closeOpenDetail();
+    return;
+  }
+  closeOpenDetail();
+
+  rowEl.classList.add('key-row-active');
+  _openDetailKey = key;
+  currentKeyViewRaw = false;
+
+  const detailTr = document.createElement('tr');
+  detailTr.className = 'key-detail-row';
+  detailTr.innerHTML = `<td colspan="4"><div class="inline-detail"><span class="spinner"></span> Loading...</div></td>`;
+  rowEl.after(detailTr);
+
   try {
     const d = await api(`/keys/detail?key=${encodeURIComponent(key)}`);
-    let valueHtml;
-    if (d.format === 'json') {
-      valueHtml = `<pre class="json">${JSON.stringify(d.value, null, 2)}</pre>`;
-    } else if (d.format === 'hash') {
-      valueHtml = '<table>' + Object.entries(d.value).map(([k,v]) => `<tr><td style="color:var(--primary)">${k}</td><td>${v}</td></tr>`).join('') + '</table>';
-    } else if (d.format === 'list' || d.format === 'set') {
-      valueHtml = '<table>' + (d.value||[]).map((v,i) => `<tr><td style="width:40px;color:var(--text-muted)">${i}</td><td>${v}</td></tr>`).join('') + '</table>';
-    } else if (d.format === 'zset') {
-      valueHtml = '<table><thead><tr><th>Member</th><th>Score</th></tr></thead>' + (d.value||[]).map(z => `<tr><td>${z.Member||z.member||''}</td><td>${z.Score||z.score||0}</td></tr>`).join('') + '</table>';
-    } else if (d.format === 'stream') {
-      valueHtml = '<table><thead><tr><th>ID</th><th>Data</th></tr></thead>' + (d.value||[]).map(m => `<tr><td style="color:var(--text-muted)">${m.ID||m.id||''}</td><td>${JSON.stringify(m.Values||m.values||{})}</td></tr>`).join('') + '</table>';
-    } else {
-      valueHtml = `<pre class="json">${typeof d.value === 'string' ? d.value : JSON.stringify(d.value, null, 2)}</pre>`;
-    }
-    el.innerHTML = `<div class="detail-panel">
-      <h3>${d.key}</h3>
-      <div class="detail-meta">
-        <span>Type: <b>${d.type}</b></span>
-        <span>TTL: <b>${d.ttl > 0 ? d.ttl + 's' : 'none'}</b></span>
-        <span>Size: <b>${fmtBytes(d.size)}</b></span>
-        <span>Length: <b>${fmtNum(d.length)}</b></span>
-        <span>Format: <b>${d.format}</b></span>
-      </div>
-      ${valueHtml}
-    </div>`;
+    _lastKeyData = d;
+    renderInlineDetail(detailTr, d);
   } catch(e) {
-    el.innerHTML = `<div class="detail-panel" style="color:var(--danger)">Error: ${e.message}</div>`;
+    detailTr.querySelector('.inline-detail').innerHTML = `<span style="color:var(--danger)">Error: ${e.message}</span>`;
   }
+}
+
+function renderInlineDetail(detailTr, d) {
+  const raw = currentKeyViewRaw;
+  let valueHtml = '';
+
+  if (d.format === 'json') {
+    valueHtml = raw
+      ? `<pre class="json">${escHtml(JSON.stringify(d.value))}</pre>`
+      : `<pre class="json">${syntaxHighlight(JSON.stringify(d.value, null, 2))}</pre>`;
+
+  } else if (d.format === 'hash') {
+    valueHtml = '<table><thead><tr><th style="width:160px">Field</th><th>Value</th></tr></thead>' +
+      Object.entries(d.value).map(([k,v]) =>
+        `<tr><td style="color:var(--primary);vertical-align:top">${escHtml(k)}</td><td>${renderValue(v, raw)}</td></tr>`
+      ).join('') + '</table>';
+
+  } else if (d.format === 'list' || d.format === 'set') {
+    valueHtml = '<table><thead><tr><th style="width:50px">#</th><th>Value</th></tr></thead>' +
+      (d.value||[]).map((v,i) =>
+        `<tr><td style="color:var(--text-muted);vertical-align:top">${i}</td><td>${renderValue(v, raw)}</td></tr>`
+      ).join('') + '</table>';
+
+  } else if (d.format === 'zset') {
+    valueHtml = '<table><thead><tr><th>Member</th><th style="width:100px">Score</th></tr></thead>' +
+      (d.value||[]).map(z => {
+        const member = z.Member || z.member || '';
+        return `<tr><td>${renderValue(member, raw)}</td><td style="vertical-align:top">${z.Score||z.score||0}</td></tr>`;
+      }).join('') + '</table>';
+
+  } else if (d.format === 'stream') {
+    valueHtml = '<table><thead><tr><th style="width:180px">ID</th><th>Data</th></tr></thead>' +
+      (d.value||[]).map(m =>
+        `<tr><td style="color:var(--text-muted);vertical-align:top">${m.ID||m.id||''}</td><td>${renderValue(m.Values||m.values||{}, raw)}</td></tr>`
+      ).join('') + '</table>';
+
+  } else {
+    valueHtml = renderValue(d.value, raw);
+  }
+
+  const safeKey = d.key.replace(/'/g, "\\'");
+  detailTr.querySelector('td').innerHTML = `<div class="inline-detail">
+    <button class="collapse-btn" onclick="closeOpenDetail()" title="Close">&#x2715; Close</button>
+    <div class="detail-meta">
+      <span>Type: <b>${d.type}</b></span>
+      <span>TTL: <b>${d.ttl > 0 ? d.ttl + 's' : 'none'}</b></span>
+      <span>Size: <b>${fmtBytes(d.size)}</b></span>
+      <span>Length: <b>${fmtNum(d.length)}</b></span>
+      <span>Format: <b>${d.format}</b></span>
+    </div>
+    <div class="view-mode-bar">
+      <button class="${raw ? '' : 'active'}" onclick="currentKeyViewRaw=false;renderInlineDetail(this.closest('tr'), _lastKeyData)">Formatted</button>
+      <button class="${raw ? 'active' : ''}" onclick="currentKeyViewRaw=true;renderInlineDetail(this.closest('tr'), _lastKeyData)">Raw</button>
+    </div>
+    ${valueHtml}
+  </div>`;
 }
 
 async function deleteKey(key) {
@@ -275,15 +405,15 @@ async function viewQueue(key) {
     const d = await api(`/queues/detail?key=${encodeURIComponent(key)}`);
     let entriesHtml = '';
     if (d.type === 'list') {
-      entriesHtml = '<table><thead><tr><th>#</th><th>Value</th></tr></thead>' +
-        (d.entries||[]).map((v,i) => `<tr><td style="width:40px;color:var(--text-muted)">${i}</td><td>${v}</td></tr>`).join('') + '</table>';
+      entriesHtml = '<table><thead><tr><th style="width:50px">#</th><th>Value</th></tr></thead>' +
+        (d.entries||[]).map((v,i) => `<tr><td style="color:var(--text-muted);vertical-align:top">${i}</td><td>${renderValue(v, false)}</td></tr>`).join('') + '</table>';
     } else if (d.type === 'stream') {
-      entriesHtml = '<table><thead><tr><th>ID</th><th>Data</th></tr></thead>' +
-        (d.entries||[]).map(m => `<tr><td style="color:var(--text-muted)">${m.ID||''}</td><td>${JSON.stringify(m.Values||{})}</td></tr>`).join('') + '</table>';
+      entriesHtml = '<table><thead><tr><th style="width:180px">ID</th><th>Data</th></tr></thead>' +
+        (d.entries||[]).map(m => `<tr><td style="color:var(--text-muted);vertical-align:top">${m.ID||''}</td><td>${renderValue(m.Values||m.values||{}, false)}</td></tr>`).join('') + '</table>';
       if (d.groups && d.groups.length > 0) {
         entriesHtml += '<h3 style="margin-top:16px;margin-bottom:8px">Consumer Groups</h3>';
         entriesHtml += '<table><thead><tr><th>Group</th><th>Consumers</th><th>Pending</th><th>Last ID</th></tr></thead>' +
-          d.groups.map(g => `<tr><td>${g.name}</td><td>${g.consumers}</td><td>${g.pending}</td><td style="color:var(--text-muted)">${g.last_delivered_id}</td></tr>`).join('') + '</table>';
+          d.groups.map(g => `<tr><td>${escHtml(g.name)}</td><td>${g.consumers}</td><td>${g.pending}</td><td style="color:var(--text-muted)">${g.last_delivered_id}</td></tr>`).join('') + '</table>';
       }
     }
     el.innerHTML = `<div class="detail-panel">
@@ -308,20 +438,51 @@ async function popFromQueue(key) {
   try { const r = await apiMut('POST', `/queues/pop?key=${encodeURIComponent(key)}&count=1`, {}); alert('Popped: ' + JSON.stringify(r.values)); viewQueue(key); } catch(e) { alert(e.message); }
 }
 
-async function scanBigKeys() {
+let _bkEventSource = null;
+
+function scanBigKeys() {
+  if (_bkEventSource) { _bkEventSource.close(); _bkEventSource = null; }
+
   const pattern = document.getElementById('bk-pattern').value || '*';
   const top = document.getElementById('bk-top').value || '20';
   const threshold = document.getElementById('bk-threshold').value || '0';
-  document.getElementById('bk-status').innerHTML = '<span class="spinner"></span> Scanning...';
+  const maxScan = document.getElementById('bk-maxscan').value || '10000';
+
   document.getElementById('bk-tbody').innerHTML = '';
-  try {
-    const data = await api(`/analysis/bigkeys?pattern=${encodeURIComponent(pattern)}&top=${top}&threshold=${threshold}`);
-    const results = data.results || [];
-    document.getElementById('bk-tbody').innerHTML = results.length === 0
-      ? '<tr><td colspan="4" class="empty">No big keys found</td></tr>'
-      : results.map(r => `<tr><td class="clickable" onclick="showPage('keys');document.getElementById('key-pattern').value='${r.key}';scanKeys(true)">${r.key}</td><td>${tag(r.type)}</td><td>${fmtBytes(r.size)}</td><td>${fmtNum(r.element_count)}</td></tr>`).join('');
-    document.getElementById('bk-status').textContent = `Scanned ${fmtNum(data.scanned_keys)} keys in ${data.duration}`;
-  } catch(e) { document.getElementById('bk-status').textContent = 'Error: ' + e.message; }
+  document.getElementById('bk-progress').style.display = 'block';
+  document.getElementById('bk-progress-bar').style.width = '0%';
+  document.getElementById('bk-status').innerHTML = '<span class="spinner"></span> Scanning...';
+
+  const url = `${API}/analysis/bigkeys?pattern=${encodeURIComponent(pattern)}&top=${top}&threshold=${threshold}&maxScan=${maxScan}`;
+  const es = new EventSource(url);
+  _bkEventSource = es;
+  const maxScanNum = parseInt(maxScan) || 10000;
+
+  es.onmessage = (e) => {
+    const p = JSON.parse(e.data);
+    const pct = Math.min(100, Math.round((p.scanned_keys / maxScanNum) * 100));
+    document.getElementById('bk-progress-bar').style.width = pct + '%';
+    document.getElementById('bk-status').innerHTML = p.done
+      ? `Done — scanned ${fmtNum(p.scanned_keys)} keys in ${p.duration}, found ${p.found} big keys`
+      : `<span class="spinner"></span> Scanned ${fmtNum(p.scanned_keys)} keys, found ${p.found} so far (${p.elapsed})`;
+
+    if (p.done) {
+      es.close();
+      _bkEventSource = null;
+      document.getElementById('bk-progress').style.display = 'none';
+      const results = p.results || [];
+      document.getElementById('bk-tbody').innerHTML = results.length === 0
+        ? '<tr><td colspan="4" class="empty">No big keys found</td></tr>'
+        : results.map(r => `<tr><td class="clickable" onclick="showPage('keys');document.getElementById('key-pattern').value='${escHtml(r.key)}';scanKeys(true)">${escHtml(r.key)}</td><td>${tag(r.type)}</td><td>${fmtBytes(r.size)}</td><td>${fmtNum(r.element_count)}</td></tr>`).join('');
+    }
+  };
+
+  es.onerror = () => {
+    es.close();
+    _bkEventSource = null;
+    document.getElementById('bk-progress').style.display = 'none';
+    document.getElementById('bk-status').textContent = 'Connection lost — scan may have timed out';
+  };
 }
 
 async function scanHotKeys() {

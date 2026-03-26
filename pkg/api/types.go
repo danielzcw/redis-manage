@@ -74,6 +74,15 @@ type AnalysisResponse struct {
 	Duration    string      `json:"duration"`
 }
 
+type ScanProgress struct {
+	ScannedKeys int64          `json:"scanned_keys"`
+	Found       int            `json:"found"`
+	Elapsed     string         `json:"elapsed"`
+	Done        bool           `json:"done"`
+	Results     []BigKeyResult `json:"results,omitempty"`
+	Duration    string         `json:"duration,omitempty"`
+}
+
 type ErrorResponse struct {
 	Error string `json:"error"`
 }
