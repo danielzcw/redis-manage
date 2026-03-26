@@ -22,13 +22,13 @@ go build -o bin/redis-manage ./cmd/server
 REDIS_ADDR=redis.example.com:6380 REDIS_PASSWORD=secret ./bin/redis-manage
 ```
 
-Open http://localhost:8080 in your browser.
+Open http://localhost:9528 in your browser.
 
 ## Configuration
 
 | Env Variable   | Default          | Description          |
 |----------------|------------------|----------------------|
-| PORT           | 8080             | HTTP server port     |
+| PORT           | 9528             | HTTP server port     |
 | REDIS_ADDR     | localhost:6379   | Redis server address |
 | REDIS_PASSWORD |                  | Redis password       |
 | REDIS_DB       | 0                | Redis database index |
