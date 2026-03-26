@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"time"
 
@@ -21,9 +20,17 @@ func NewAnalysisService(rdb *redis.Client, logger *zap.Logger) *AnalysisService 
 	return &AnalysisService{rdb: rdb, logger: logger}
 }
 
-// ScanBigKeys iterates all keys matching the pattern and returns the top N
-// by memory usage. Uses pipelined MEMORY USAGE for efficiency.
-func (s *AnalysisService) ScanBigKeys(ctx context.Context, pattern string, topN int, thresholdBytes int64) (*api.AnalysisResponse, error) {
+// ScanBigKeysStream iterates keys matching pattern and streams progress
+// via the onProgress callback. Respects maxScan limit and context cancellation.
+// Element counts are fetched in a single pipeline at the end for top-N only.
+func (s *AnalysisService) ScanBigKeysStream(
+	ctx context.Context,
+	pattern string,
+	topN int,
+	thresholdBytes int64,
+	maxScan int64,
+	onProgress func(api.ScanProgress),
+) {
 	start := time.Now()
 
 	if topN <= 0 {
@@ -32,17 +39,31 @@ func (s *AnalysisService) ScanBigKeys(ctx context.Context, pattern string, topN 
 	if pattern == "" {
 		pattern = "*"
 	}
+	if maxScan <= 0 {
+		maxScan = 10000
+	}
 
 	var (
 		cursor      uint64
 		scannedKeys int64
-		results     []api.BigKeyResult
+		candidates  []api.BigKeyResult
+		lastReport  time.Time
 	)
 
-	for {
-		keys, nextCursor, err := s.rdb.Scan(ctx, cursor, pattern, 100).Result()
+	for scannedKeys < maxScan {
+		if ctx.Err() != nil {
+			break
+		}
+
+		batchSize := int64(200)
+		if remaining := maxScan - scannedKeys; remaining < batchSize {
+			batchSize = remaining
+		}
+
+		keys, nextCursor, err := s.rdb.Scan(ctx, cursor, pattern, batchSize).Result()
 		if err != nil {
-			return nil, fmt.Errorf("scan: %w", err)
+			s.logger.Error("big key scan error", zap.Error(err))
+			break
 		}
 
 		if len(keys) > 0 {
@@ -61,64 +82,79 @@ func (s *AnalysisService) ScanBigKeys(ctx context.Context, pattern string, topN 
 				if size < thresholdBytes {
 					continue
 				}
-
-				keyType := typeCmds[i].Val()
-				elemCount := s.getElementCount(ctx, key, keyType)
-
-				results = append(results, api.BigKeyResult{
-					Key:          key,
-					Type:         keyType,
-					Size:         size,
-					ElementCount: elemCount,
+				candidates = append(candidates, api.BigKeyResult{
+					Key:  key,
+					Type: typeCmds[i].Val(),
+					Size: size,
 				})
 			}
+		}
+
+		if time.Since(lastReport) > 300*time.Millisecond {
+			onProgress(api.ScanProgress{
+				ScannedKeys: scannedKeys,
+				Found:       len(candidates),
+				Elapsed:     time.Since(start).Truncate(time.Millisecond).String(),
+			})
+			lastReport = time.Now()
 		}
 
 		cursor = nextCursor
 		if cursor == 0 {
 			break
 		}
-		if ctx.Err() != nil {
-			break
-		}
 	}
 
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].Size > results[j].Size
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].Size > candidates[j].Size
 	})
-	if len(results) > topN {
-		results = results[:topN]
+	if len(candidates) > topN {
+		candidates = candidates[:topN]
 	}
 
-	return &api.AnalysisResponse{
-		Results:     results,
+	s.fillElementCounts(ctx, candidates)
+
+	onProgress(api.ScanProgress{
 		ScannedKeys: scannedKeys,
-		Duration:    time.Since(start).String(),
-	}, nil
+		Found:       len(candidates),
+		Elapsed:     time.Since(start).Truncate(time.Millisecond).String(),
+		Done:        true,
+		Results:     candidates,
+		Duration:    time.Since(start).Truncate(time.Millisecond).String(),
+	})
 }
 
-func (s *AnalysisService) getElementCount(ctx context.Context, key, keyType string) int64 {
-	switch keyType {
-	case "string":
-		n, _ := s.rdb.StrLen(ctx, key).Result()
-		return n
-	case "hash":
-		n, _ := s.rdb.HLen(ctx, key).Result()
-		return n
-	case "list":
-		n, _ := s.rdb.LLen(ctx, key).Result()
-		return n
-	case "set":
-		n, _ := s.rdb.SCard(ctx, key).Result()
-		return n
-	case "zset":
-		n, _ := s.rdb.ZCard(ctx, key).Result()
-		return n
-	case "stream":
-		n, _ := s.rdb.XLen(ctx, key).Result()
-		return n
+// fillElementCounts pipelines all element count commands in a single batch.
+func (s *AnalysisService) fillElementCounts(ctx context.Context, results []api.BigKeyResult) {
+	if len(results) == 0 {
+		return
 	}
-	return 0
+
+	pipe := s.rdb.Pipeline()
+	cmds := make([]*redis.IntCmd, len(results))
+	for i, r := range results {
+		switch r.Type {
+		case "string":
+			cmds[i] = pipe.StrLen(ctx, r.Key)
+		case "hash":
+			cmds[i] = pipe.HLen(ctx, r.Key)
+		case "list":
+			cmds[i] = pipe.LLen(ctx, r.Key)
+		case "set":
+			cmds[i] = pipe.SCard(ctx, r.Key)
+		case "zset":
+			cmds[i] = pipe.ZCard(ctx, r.Key)
+		case "stream":
+			cmds[i] = pipe.XLen(ctx, r.Key)
+		}
+	}
+	_, _ = pipe.Exec(ctx)
+
+	for i := range results {
+		if cmds[i] != nil {
+			results[i].ElementCount = cmds[i].Val()
+		}
+	}
 }
 
 // ScanHotKeys samples random keys and uses OBJECT FREQ to estimate
